@@ -1,0 +1,52 @@
+{
+    "as": {
+        "amount": 9999.0,
+        "payment_method": "tarjeta",
+        "status": "PAGADO"
+    },
+    "abc": {
+        "amount": 2000.0,
+        "payment_method": "paypal",
+        "status": "PAGADO"
+    },
+    "a": {
+        "amount": 9999.0,
+        "payment_method": "tarjeta",
+        "status": "PAGADO"
+    },
+    "b": {
+        "amount": 9999.0,
+        "payment_method": "tarjeta",
+        "status": "PAGADO"
+    },
+    "c": {
+        "amount": 100000.0,
+        "payment_method": "tarjeta",
+        "status": "FALLIDO"
+    },
+    "d": {
+        "amount": 9999.0,
+        "payment_method": "tarjeta",
+        "status": "PAGADO"
+    },
+    "e": {
+        "amount": 9000.0,
+        "payment_method": "tarjeta",
+        "status": "PAGADO"
+    },
+    "f": {
+        "amount": 9000.0,
+        "payment_method": "tarjeta",
+        "status": "PAGADO"
+    },
+    "g": {
+        "amount": 6000.0,
+        "payment_method": "tarjeta",
+        "status": "PAGADO"
+    },
+    "h": {
+        "amount": 6000.0,
+        "payment_method": "tarjeta",
+        "status": "PAGADO"
+    }
+}

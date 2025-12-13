@@ -1,0 +1,141 @@
+# =========================================================
+# Workflow: Automatic Deployment Pipeline
+# ---------------------------------------------------------
+# Descripción general:
+#   Este workflow se ejecuta automáticamente cuando se hace
+#   push a la rama 'production'. Su función es crear
+#   automáticamente un nuevo tag semántico (v*.*.*) y el
+#   Release correspondiente en GitHub. Luego dispara el
+#   despliegue en Render mediante un Deploy Hook.
+#
+# ---------------------------------------------------------
+# Lógica de versionado:
+#   - El workflow detecta el último tag existente con formato
+#     semántico (vMAJOR.MINOR.PATCH). Si no hay ninguno,
+#     parte desde v0.0.0.
+#   - Luego lee el mensaje del commit que activó el workflow:
+#       • [bump:major] → incrementa versión mayor (v(M+1).0.0)
+#       • [bump:minor] → incrementa versión menor (vM.(m+1).0)
+#       • [bump:patch] o sin bump → incrementa patch (vM.m.(p+1))
+#   - Si el mensaje no contiene ningún marcador [bump:...],
+#     aplica por defecto un incremento de patch.
+#   - Si el tag calculado ya existe, incrementa PATCH hasta
+#     encontrar un tag libre.
+#   - Finalmente crea el Release con el nuevo tag y asocia
+#     el commit actual ('commitish') como punto de referencia.
+#
+# ---------------------------------------------------------
+# Render (Deploy Hook):
+#   - Requiere el secreto RENDER_DEPLOY_HOOK_URL configurado
+#     en GitHub Actions.
+#   - Si el secreto no existe (o está vacío), el workflow
+#     falla antes de crear el Release.
+#
+# ---------------------------------------------------------
+# Ejemplos de uso:
+#   Commit sin bump → genera siguiente patch (vM.m.(p+1))
+#     git commit -m "Fix: corrige validación de pago"
+#
+#   Commit con bump menor → genera siguiente versión menor
+#     git commit -m "Feat: agrega endpoint de pagos [bump:minor]"
+#
+#   Commit con bump mayor → genera siguiente versión mayor
+#     git commit -m "BREAKING: cambio de API [bump:major]"
+#
+# ---------------------------------------------------------
+# Notas adicionales:
+#   • Este workflow no crea nuevos commits, solo etiquetas (tags)
+#     y Releases en GitHub.
+#   • Requiere permisos 'contents: write' para poder crear
+#     el tag y el Release mediante la API.
+# =========================================================
+
+name: CD/Release Pipeline
+
+on:
+  push:
+    branches: [production]
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  tag-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Calcular próximo tag semántico
+        id: semver
+        run: |
+          set -e
+          git fetch --tags --force
+
+          # Último tag semántico por orden de versión (no depende de alcanzabilidad)
+          LAST_TAG=$(git tag --list "v[0-9]*.[0-9]*.[0-9]*" --sort=-v:refname | head -n 1)
+          if [ -z "$LAST_TAG" ]; then LAST_TAG="v0.0.0"; fi
+
+          MAJOR=${LAST_TAG#v}; MAJOR=${MAJOR%%.*}
+          REST=${LAST_TAG#v$MAJOR.}; MINOR=${REST%%.*}
+          PATCH=${LAST_TAG##*.}
+
+          COMMIT_MSG="${{ github.event.head_commit.message || '' }}"
+          BUMP="patch"
+          if echo "$COMMIT_MSG" | grep -qi '\[bump:major\]'; then
+            BUMP="major"
+          elif echo "$COMMIT_MSG" | grep -qi '\[bump:minor\]'; then
+            BUMP="minor"
+          fi
+
+          if [ "$BUMP" = "major" ]; then
+            MAJOR=$((MAJOR+1)); MINOR=0; PATCH=0
+          elif [ "$BUMP" = "minor" ]; then
+            MINOR=$((MINOR+1)); PATCH=0
+          else
+            PATCH=$((PATCH+1))
+          fi
+
+          NEXT_TAG="v${MAJOR}.${MINOR}.${PATCH}"
+
+          # Evitar colisiones: si el tag ya existe, seguir incrementando PATCH
+          while git rev-parse -q --verify "refs/tags/$NEXT_TAG" >/dev/null; do
+            PATCH=$((PATCH+1))
+            NEXT_TAG="v${MAJOR}.${MINOR}.${PATCH}"
+          done
+
+          echo "tag=$NEXT_TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Validar Secrets de Render (Deploy Hook)
+        env:
+          RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+        run: |
+          set -e
+          if [ -z "$RENDER_DEPLOY_HOOK_URL" ]; then
+            echo "Falta configurar el secreto RENDER_DEPLOY_HOOK_URL en GitHub."
+            exit 1
+          fi
+
+      - name: Crear release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ steps.semver.outputs.tag }}
+          commitish: ${{ github.sha }}
+          release_name: Release ${{ steps.semver.outputs.tag }}
+          body: |
+            Release generado automáticamente desde push a 'production'.
+            Commit: ${{ github.sha }}
+          draft: false
+          prerelease: false
+
+      - name: Disparar despliegue en Render (Deploy Hook)
+        env:
+          RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+        run: |
+          set -e
+          curl -fsS -X POST "$RENDER_DEPLOY_HOOK_URL"
