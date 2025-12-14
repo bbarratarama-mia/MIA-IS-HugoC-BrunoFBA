@@ -6,7 +6,7 @@
 
 ## 1. API en producción (Render)
 
-- URL Documentación Interactiva (OpenAPI): https://grupo-8-hugoc-brunof-4pgt.onrender.com/docs
+- URL Documentación Interactiva (OpenAPI): https://mia-is-hugoc-brunofba.onrender.com
 
 ## 2. Ejecución local
 
